@@ -1,0 +1,83 @@
+-- 1️ Function: Get records by pattern (name, surname, phone)
+CREATE FUNCTION search_records(pattern TEXT)
+RETURNS TABLE(id INT, name VARCHAR, surname VARCHAR, phone VARCHAR) AS $$
+BEGIN
+    RETURN QUERY
+    SELECT phonebook2.id, phonebook2.name, phonebook2.surname, phonebook2.phone 
+    FROM phonebook2 
+    WHERE phonebook2.name ILIKE '%' || search_records.pattern || '%'
+       OR phonebook2.name ILIKE '%' || search_records.pattern || '%'
+       OR phonebook2.phone ILIKE '%' || search_records.pattern || '%';
+END;
+$$ LANGUAGE plpgsql;
+
+-- 2️ Procedure: Insert or Update a User
+CREATE OR REPLACE PROCEDURE insert_or_update_user(user_name VARCHAR, user_surname VARCHAR, phone_number VARCHAR)
+LANGUAGE plpgsql AS $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM phonebook2 WHERE name = user_name) THEN
+        UPDATE phonebook2
+        SET phone = phone_number, surname = user_surname
+        WHERE name = user_name;
+    ELSE
+        INSERT INTO phonebook2 (name, surname, phone)
+        VALUES (user_name, user_surname, phone_number);
+    END IF;
+END;
+$$;
+
+
+-- 3️ Procedure: Bulk Insert Users with Phone Validation
+CREATE PROCEDURE insert_bulk_users(users JSON)
+LANGUAGE plpgsql AS $$
+DECLARE
+    user_record JSON;
+    u_name TEXT;
+    u_surname TEXT;
+    u_phone TEXT;
+BEGIN
+    FOR user_record IN SELECT * FROM json_array_elements(users)
+    LOOP
+        u_name := user_record->>0;
+        u_surname := user_record->>1;
+        u_phone := user_record->>2;
+        IF u_phone ~ '^\+?\d{10,12}$' THEN
+            IF NOT EXISTS (
+                SELECT 1 FROM phonebook2 WHERE name = u_name OR phone = u_phone
+            ) THEN 
+                INSERT INTO phonebook2(name, surname, phone)
+                VALUES (u_name, u_surname, u_phone);
+            END IF;
+        END IF;
+    END LOOP;
+END;
+$$;
+
+
+-- 4️ Function: Paginated Querying
+CREATE OR REPLACE FUNCTION paginated_query(page_number INT, page_size INT DEFAULT 5)
+RETURNS TABLE(
+    id INT,
+    name VARCHAR(100),
+    surname VARCHAR(100),
+    phone VARCHAR(50)
+) AS $$
+BEGIN
+    RETURN QUERY
+    SELECT p.id, p.name, p.surname, p.phone
+    FROM phonebook2 p
+    ORDER BY p.id
+    OFFSET (page_number - 1) * page_size
+    LIMIT page_size;
+END;
+$$ LANGUAGE plpgsql;
+
+
+
+-- 5️ Procedure: Delete User by Name or Phone
+CREATE PROCEDURE delete_user(identifier TEXT)
+LANGUAGE plpgsql AS $$
+BEGIN
+    DELETE FROM phonebook2 WHERE name = identifier OR phone = identifier;
+END;
+$$;
